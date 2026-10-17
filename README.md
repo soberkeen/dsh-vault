@@ -1,291 +1,333 @@
 # dsh-vault
 
-**DSH（DeepSeek Harness）加密全量备份与恢复插件**
+**English** · [中文](./README.zh-CN.md)
+
+**Encrypted full backup and restore for DSH (DeepSeek Harness)**
 
 [![install](https://img.shields.io/badge/install-github%3Asoberkeen%2Fdsh--vault-2ea043.svg)](https://github.com/soberkeen/dsh-vault)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org)
 
-> 把**配置 / 会话 / 技能 / 插件 / 工作区 / Hindsight 记忆 / 客户端安装包**打成**加密分卷包**，
-> 落盘本地目录 + 可推送到 NAS（网络路径 / WebDAV）；包内自带**自包含还原器**与恢复台账，配 GFS 滚动保留，支持定时自动备份。
+> Packs **config / sessions / skills / plugins / workspaces / Hindsight memory / the DSH client installer** into
+> **encrypted, chunked volumes**, written to a local directory and optionally pushed to a NAS (network share or WebDAV).
+> Every package carries a **self-contained restorer** and a recovery ledger inside it, with GFS rotation and optional
+> scheduled backups.
 >
-> **零编译 · 零外部依赖**：`lib/` 下的纯 ESM JavaScript 就是源码兼产物；只使用 `node:` 内置模块 —— 不依赖 7z / openssl / rclone / 任何 npm 包，因此可装到任意电脑的任意 DSH 上。
+> **Zero build step · zero external dependencies**: the pure-ESM JavaScript under `lib/` *is* the source and the
+> artifact. Only `node:` builtins are used — no 7z, no openssl, no rclone, no npm dependency — so it installs on any
+> machine that runs DSH.
 >
-> 状态（2026-10-17）：**已验证** —— 真实包 `core` 599 MB 与 `full_all` 711 MB 均通过 `verify`（明文 + 分卷哈希双一致）与 `restore-drill`（30/30、31/31）。已在 DSH `0.2.0-rc.2` 实跑；与 `0.2.1-rc.2` 的契约核对见 [docs/兼容性-0.2.1-rc.2.md](https://github.com/soberkeen/dsh-vault/blob/main/docs/compat-0.2.1-rc.2.md)（9 项契约中 8 项零变化、1 项纯增量）。
+> Status (2026-10-17): **verified**. Real packages `core` (599 MB) and `full_all` (711 MB) both pass `verify`
+> (plaintext hash and per-volume hashes agree) and `restore-drill` (30/30, 31/31). Runs on DSH `0.2.0-rc.2`, with the
+> settings panel, all six tools and the HTTP API exercised in a real injected session. Contract **checked against
+> `0.2.1-rc.2`** — see [docs/compat-0.2.1-rc.2.md](./docs/compat-0.2.1-rc.2.md) (9 contracts, 8 unchanged, 1 additive).
 
 ---
 
-## 1. 安装
+## 1. Install
 
-### 从 GitHub 装（推荐 —— 当前唯一分发渠道）
+### From GitHub (recommended — the only distribution channel right now)
 
 ```powershell
-# DSH 官方 CLI —— 会同时维护 dependencies + lock + node_modules + profile bundles
-& "<DSH 安装目录>\resources\runtime\cli\bin\dsh.cmd" plugin add github:soberkeen/dsh-vault
+# Official DSH CLI — maintains dependencies + lockfile + node_modules + profile bundles
+& "<DSH install dir>\resources\runtime\cli\bin\dsh.cmd" plugin add github:soberkeen/dsh-vault
 
-# 指定 profile（多 profile 时）
-& "<DSH 安装目录>\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:soberkeen/dsh-vault
+# Pin a profile when you run more than one
+& "<DSH install dir>\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:soberkeen/dsh-vault
 ```
 
-装完**完全退出 DSH 再启动**（不是点崩溃框的重启），设置左栏出现「备份」即成功。
+Then **fully quit DSH and start it again** (not the "restart" button on the crash dialog). A **Backup** entry appears
+in the settings sidebar when it worked.
 
-> **npm 分发暂缓**：包名已定为 `@lingfengmow/dsh-vault`，但 npm 在 2026-07 起的 2FA 发布策略（granular token bypass 2FA 弃用）与 `npm publish` 的 web 授权交接存在缺陷 —— 浏览器授权返回 200 之后 PUT 仍返回 404，六轮对照实验确认与权限 / org / 包名 / token / 网络 / 客户端版本全都无关。完整证据链见 [docs/RELEASING.md](./docs/RELEASING.md#为什么-npm-发布一直-404已实测归因)。**GitHub 安装完全等价**：`lib/` 是纯 ESM，无构建步骤，装下来即可运行。
+> **npm distribution is on hold.** The package name is reserved as `@lingfengmow/dsh-vault`, but npm's 2FA publishing
+> policy (granular-token bypass of 2FA deprecated in 2026-07) and `npm publish`'s web-auth handoff disagree: the browser
+> handoff returns 200 and the following PUT still returns 404. Six rounds of controlled experiments ruled out
+> permissions, org, package name, token, network and client version. Full evidence chain in
+> [docs/RELEASING.md](./docs/RELEASING.md). **Installing from GitHub is equivalent** — `lib/` is plain ESM with no build
+> step.
 
-### 本地开发
+### Local development
 
 ```powershell
-# 免重启注入（需 dsh-super-injector）
-dev_inject_plugin  -dir "<本目录绝对路径>"
+# Hot injection, no restart (needs dsh-super-injector)
+dev_inject_plugin  -dir "<absolute path to this directory>"
 
-# 或写进 profile（重启后由 bundles 装配）
-dev_install_package -dir "<本目录绝对路径>" -profile desktop
+# Or write it into the profile (assembled from bundles on restart)
+dev_install_package -dir "<absolute path to this directory>" -profile desktop
 
-# 打成 tgz 跨机分发（无构建步骤，tgz 即产物）
+# Pack a tgz for another machine (no build step; the tgz is the artifact)
 npm pack
 ```
 
-**要求**：DSH ≥ 0.2.0、Node ≥ 18（DSH 自带 runtime 即可）、pwsh 7（仅 `restore.ps1` 需要）。
-**不需要**：7z / openssl / gpg / rclone / 任何 npm 依赖。Docker 仅在需要备份 Hindsight 的 Postgres 库时用到（`docker exec … pg_dump`）。
+**Requires**: DSH ≥ 0.2.0, Node ≥ 18 (the DSH runtime is enough), pwsh 7 (only for `restore.ps1`).
+**Does not require**: 7z / openssl / gpg / rclone / any npm dependency. Docker is used only when backing up Hindsight's
+Postgres database (`docker exec … pg_dump`).
 
-### 装完自检
+### Self-check after installing
 
 ```powershell
-npm run check                       # 语法检查
-node scripts/client-register-test.mjs   # client 注册契约 8 项断言，必须全绿
-node scripts/health-check.mjs       # 15 项运行时自检
+npm run check                            # syntax gate
+node scripts/client-register-test.mjs    # client registration contract, 8 assertions, must be all green
+node scripts/health-check.mjs            # 15 runtime checks
 ```
 
-
 ---
 
-## 2. 六个工具（AI 侧入口）
+## 2. Six tools (the AI-facing entry points)
 
-| 工具 | 作用 | 关键参数 |
+| Tool | What it does | Key parameters |
 |---|---|---|
-| `vault_scan` | 扫描 + 分层预览（P0 必存 / P1 可勾 / P2 排除），**零副作用** | `scope`、`includeP1`、`topExcluded` |
-| `vault_backup` | 执行加密备份并落地 | `password`、`outDir`、`scope`、`includeP1`、`dryRun` |
-| `vault_list` | 列出历史包（按逻辑包聚合多卷） | `dir` |
-| `vault_verify` | 完整解密 + 明文/分卷哈希校验（不落盘） | `package`（必填）、`password` |
-| `vault_restore` | 还原：`--target` 解包 / `inPlace` 原位还原 | `package`（必填）、`password`、`target`、`inPlace`、`only`、`list` |
-| `vault_prune` | GFS 滚动保留（默认 dry-run，出删除清单） | `dir`、`apply`、`hardDelete`、`keepLast`、`maxTotalGB` |
+| `vault_scan` | Scan and preview by importance tier (P0 must-keep / P1 optional / P2 excluded), **no side effects** | `scope`, `includeP1`, `topExcluded` |
+| `vault_backup` | Run an encrypted backup and write it out | `password`, `outDir`, `scope`, `includeP1`, `dryRun` |
+| `vault_list` | List historical packages (grouping volumes of one logical package) | `dir` |
+| `vault_verify` | Full decrypt plus plaintext/volume hash check (writes nothing) | `package` (required), `password` |
+| `vault_restore` | Restore: unpack to `--target`, or restore in place | `package` (required), `password`, `target`, `inPlace`, `only`, `list` |
+| `vault_prune` | GFS rotation (dry-run by default, prints the delete list) | `dir`, `apply`, `hardDelete`, `keepLast`, `maxTotalGB` |
 
-> 工具 schema 受 `scripts/schema-gate.mjs` 门禁保护：顶层 `type:'object'`、`required` 为顶层字符串数组、属性节点内**不得**有布尔 `required`（历史上非法 schema 会导致 DeepSeek/mimo 会话整体 400）。
+> Tool schemas are guarded by `scripts/schema-gate.mjs`: top-level `type:'object'`, `required` a top-level array of
+> strings, and **no** boolean `required` inside property nodes. Historically an invalid schema made whole
+> DeepSeek/mimo sessions return 400.
 
 ---
 
-## 3. 脚本速查（命令行侧入口，全部零依赖）
+## 3. Scripts (the command-line entry points, all dependency-free)
 
 ```powershell
-cd <本目录>
+cd <this directory>
 
-# ── 关卡/回归 ────────────────────────────────────────────────────────────
-node scripts/schema-gate.mjs      # 工具 schema 门禁（注册前必过；已接入 build.sh）→ 6 工具 + 必填语义全 PASS
-node scripts/policy-test.mjs      # GFS 保留策略单元验收（10 用例：minKeep/keepLast/日周月桶/体积上限/链保护/trash）→ 10/10
-node scripts/boundary-test.mjs    # 边界与健壮性（11 用例：空目录/零字节/20MiB 跨帧/长路径 LongLink/Unicode/多卷/缺卷/篡改/错密码/逐文件哈希/头损坏）→ 11/11
-node scripts/selftest.mjs "G:\DSH-Backup\_selftest"   # 端到端（扫描→打包→校验→解包→负例）→ 12/12
+# ── Gates and regressions ─────────────────────────────────────────────────
+node scripts/schema-gate.mjs      # tool schema gate (must pass before registering; wired into build.sh) → 6 tools + required semantics PASS
+node scripts/policy-test.mjs      # GFS retention unit tests (10 cases: minKeep/keepLast/day-week-month buckets/size cap/chain protection/trash) → 10/10
+node scripts/boundary-test.mjs    # boundaries and robustness (11 cases: empty dir/zero bytes/20MiB spanning frames/long paths LongLink/Unicode/multi-volume/missing volume/tampering/wrong password/per-file hashes/corrupt header) → 11/11
+node scripts/selftest.mjs "G:\DSH-Backup\_selftest"   # end to end (scan→pack→verify→unpack→negative cases) → 12/12
 
-# ── 真实落地 ─────────────────────────────────────────────────────────────
-node scripts/core-drop.mjs --dry                                  # 只预估（强烈建议先跑）
-node scripts/core-drop.mjs --out "G:\DSH-Backup"                  # core：配置+会话+记忆+安装包+插件+编排
-node scripts/core-drop.mjs --out "G:\DSH-Backup" --scope all      # 再加工作区（02-workspaces）
+# ── Real runs ─────────────────────────────────────────────────────────────
+node scripts/core-drop.mjs --dry                                  # estimate only (strongly recommended first)
+node scripts/core-drop.mjs --out "G:\DSH-Backup"                  # core: config+sessions+memory+installer+plugins+orchestration
+node scripts/core-drop.mjs --out "G:\DSH-Backup" --scope all      # also include workspaces (02-workspaces)
 
-# ── 校验与演练 ───────────────────────────────────────────────────────────
+# ── Verify and drill ──────────────────────────────────────────────────────
 $key = (Get-ChildItem "G:\DSH-Backup\_keys\*.key.txt" | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
 $pkg = (Get-ChildItem "G:\DSH-Backup\*.vault" | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
-node scripts/verify-drop.mjs --package $pkg --key-file $key           # 校验（密码从密钥文件读）
-node scripts/verify-drop.mjs --package $pkg --key-file $key --target D:\vault-check   # 顺带解包核对
+node scripts/verify-drop.mjs --package $pkg --key-file $key           # verify (password read from the key file)
+node scripts/verify-drop.mjs --package $pkg --key-file $key --target D:\vault-check   # also unpack to compare
 $pw = (Select-String -Path $key -Pattern '^密码：(.+)$').Matches[0].Groups[1].Value.Trim()
-node scripts/restore-drill.mjs --package $pkg --password $pw          # 空机还原演练（五段核对，默认零副作用）
+node scripts/restore-drill.mjs --package $pkg --password $pw          # clean-machine restore drill (five-way cross-check, no side effects by default)
 ```
 
-**构建**：`bash scripts/build.sh`（零编译形态，只做 `node --check` 语法门禁 + schema 门禁 + 必需文件存在性检查）。
+**Build**: `bash scripts/build.sh` — for a zero-build package this only runs the `node --check` syntax gate, the
+schema gate and a required-files existence check.
 
 ---
 
-## 4. 密码与密钥策略
+## 4. Password and key policy
 
-| 来源 | 优先级 | 说明 |
+| Source | Priority | Notes |
 |---|---|---|
-| `--password <值>` | 1 | 显式传入（会出现在进程参数里，仅本机临时用） |
-| 环境变量 `DSHVAULT_PASSWORD`（名可配） | 2 | 适合脚本/定时任务 |
-| 自动生成 | 3 | `core-drop.mjs` 未拿到密码时生成**合规随机密码**（首字母大写 + 特殊符号 + ≥8 位），只在 stdout 打印一次、**默认不落盘**；要落盘须显式 `--write-key`（才会写 `<out>/_keys/<包名>.key.txt`） |
+| `--password <value>` | 1 | Explicit; shows up in the process command line, fine for a one-off local run |
+| Env var `DSHVAULT_PASSWORD` (name configurable) | 2 | Suitable for scripts and scheduled jobs |
+| Generated automatically | 3 | When `core-drop.mjs` gets no password it generates a **policy-compliant random** one (leading capital + special character + ≥8 chars), prints it once on stdout and **writes it nowhere by default**; pass `--write-key` to persist it to `<out>/_keys/<package>.key.txt` |
 
-- **密钥文件等同于解密凭据**：泄露 = 包可被解开。建议移到安全位置或抄写后删除。
-- **忘记密码 = 该包永久不可恢复**（AES-256-GCM，无后门、无恢复通道）。
-- 密码**不写进** manifest、不写进包内文档、不写进日志。
+- **A key file is a decryption credential**: leaking it means the package can be opened. Move it somewhere safe, or copy
+  it down and delete it.
+- **A lost password means the package is unrecoverable** (AES-256-GCM, no backdoor, no recovery channel).
+- The password is **never** written into the manifest, into documents inside the package, or into logs.
 
 ---
 
-## 5. 备份范围与排除规则
+## 5. Backup scope and exclusion rules
 
-**分区**
+**Partitions**
 
-| 分区 | 内容 |
+| Partition | Contents |
 |---|---|
-| `00-installer` | DSH 客户端安装包（空机恢复前提；**豁免 L4 大二进制规则**） |
-| `01-dsh-home` | `$DSH_HOME`：配置 / 会话 / 技能 / 规则 / 存储（排除 `node_modules`、`cache`、`plugin-backups`、`rewind-snapshots`、`dsh-runtimes`、`logs`、`telemetry`） |
-| `02-workspaces` | 工作区（从 `$DSH_HOME/storages/workspace.json` 自动发现，白名单可勾） |
-| `03-hindsight` | `~/.hindsight` 本地目录 + Postgres 逻辑备份（`pg_dump -F c`） |
-| `04-docker` | compose / Dockerfile / .env（**镜像不打包**，可由编排重建） |
-| `05-plugins` | `plugins-desk-v1` / `plugin-data` / `profiles` 装配清单 |
+| `00-installer` | The DSH client installer (the prerequisite for restoring onto a bare machine; **exempt from the L4 large-binary rule**) |
+| `01-dsh-home` | `$DSH_HOME`: config / sessions / skills / rules / storage (excludes `node_modules`, `cache`, `plugin-backups`, `rewind-snapshots`, `dsh-runtimes`, `logs`, `telemetry`) |
+| `02-workspaces` | Workspaces, discovered from `$DSH_HOME/storages/workspace.json`, allow-listed for selection |
+| `03-hindsight` | The local `~/.hindsight` directory plus a logical Postgres backup (`pg_dump -F c`) |
+| `04-docker` | compose / Dockerfile / .env (**images are not packed**; they can be rebuilt from the orchestration files) |
+| `05-plugins` | `plugins-desk-v1` / `plugin-data` / `profiles` assembly manifests |
 
-**排除规则（四层，命中即记入 `manifest.excluded[]`）**
+**Exclusion rules (four layers; every hit is recorded in `manifest.excluded[]`)**
 
 ```
-L1 视频    扩展名清单 + 魔数双判（裸 .ts 必须命中 MPEG-TS sync 0x47 且 >1MB，防误杀 TypeScript）
-L2 依赖    node_modules/ .venv/ venv/ site-packages/ __pycache__/ .pnpm-store/ .gradle/ .nuget/ ...
-L3 缓存    dist/ build/ out/ obj/ target/ .next/ .work/ .mimocode/ .cache/ tmp/ _staging/ + *.pyc *.map
-L4 模型    runtime/ + *.pth *.pt *.ckpt *.onnx *.safetensors *.gguf + >200MB 的 {.dll .exe .bin .zip .gz .iso}
-E8 备份的备份  backup|bak|archive|old|回收站|迁移包|_备份（默认排除，防版本套娃）
-例外        GPT-SoVITS/luotianyi-dub-kit/、路径含 train|self|my|finetune 的模型、GPT-SoVITS/*.wav
+L1 video    extension list plus magic-number cross-check (a bare .ts must match the MPEG-TS sync byte 0x47 and be >1MB,
+            so TypeScript files are not killed by mistake)
+L2 deps     node_modules/ .venv/ venv/ site-packages/ __pycache__/ .pnpm-store/ .gradle/ .nuget/ ...
+L3 caches   dist/ build/ out/ obj/ target/ .next/ .work/ .mimocode/ .cache/ tmp/ _staging/ + *.pyc *.map
+L4 models   runtime/ + *.pth *.pt *.ckpt *.onnx *.safetensors *.gguf + {.dll .exe .bin .zip .gz .iso} over 200MB
+E8 backups of backups  backup|bak|archive|old|回收站|迁移包|_备份 (excluded by default, so versions do not nest)
+Exceptions  GPT-SoVITS/luotianyi-dub-kit/, models whose path contains train|self|my|finetune, GPT-SoVITS/*.wav
 ```
 
 ---
 
-## 6. 包结构与命名
+## 6. Package layout and naming
 
 ```
-DSHVAULT_<HOST>_<YYYYMMDD-HHmmss>_<KIND>_<SCOPE>[_pNN].vault      # 主包 + 分卷（默认 4 GiB/卷）
-DSHVAULT_<...>.manifest.json                                      # 明文索引（sidecar）：分区表/排除证据/哈希/链
-_keys/DSHVAULT_<...>.key.txt                                      # 仅 --write-key 时存在（默认只打印一次、不落盘）
+DSHVAULT_<HOST>_<YYYYMMDD-HHmmss>_<KIND>_<SCOPE>[_pNN].vault      # main package plus volumes (4 GiB per volume by default)
+DSHVAULT_<...>.manifest.json                                      # plaintext sidecar index: partition table / exclusion evidence / hashes / chain
+_keys/DSHVAULT_<...>.key.txt                                      # only exists with --write-key (default: printed once, never written)
 ```
 
-包内（解密后）：
+Inside the package (after decryption):
+
 ```
 RESTORE/
-  AGENT.md          恢复台账：包清单+校验和 / 分区表 / 排除证据 / 分步动作 / partial 清单
-  README.md         人读步骤（含 pg_restore 命令行模板）
-  restore.ps1       PowerShell 包装（内部调 vault-restore.mjs）
-  vault-restore.mjs 自包含还原器（与 lib/vault/portable-restore.mjs 字节一致，drill 会校验）
-  manifest.json     打包期快照（plainHash 为 null —— 该值只能在流结束后回填，见 sidecar）
+  AGENT.md          recovery ledger: package inventory + checksums / partition table / exclusion evidence / step list / partial list
+  README.md         human-readable steps (including a pg_restore command template)
+  restore.ps1       PowerShell wrapper (calls vault-restore.mjs)
+  vault-restore.mjs self-contained restorer (byte-identical to lib/vault/portable-restore.mjs; the drill verifies this)
+  manifest.json     snapshot taken at pack time (plainHash is null — that value can only be filled in once the stream ends; see the sidecar)
 payload/
   00-installer/ 01-dsh-home/ 02-workspaces/ 03-hindsight/ 04-docker/ 05-plugins/
 ```
 
-> 校验关系说清：**明文流 sha256** 与**每卷 sha256** 记录在包外 sidecar；包内 `RESTORE/manifest.json` 是打包期快照（其 `plainHash` 恒为 `null`，属设计而非缺失）。
+> On the two kinds of checksum: the **plaintext stream sha256** and the **per-volume sha256** live in the sidecar
+> outside the package; `RESTORE/manifest.json` inside the package is a pack-time snapshot whose `plainHash` is always
+> `null` — that is by design, not a gap.
 
 ---
 
-## 6.5 加密与凭证（两种模式 · 三个钥匙槽）
+## 6.5 Encryption and credentials (two modes · three key slots)
 
-**两种模式**
+**Two modes**
 
-| 模式 | 什么时候用 | 特点 |
+| Mode | When to use it | Properties |
 |---|---|---|
-| **加密**（默认） | 要上传网盘 / 放不可信位置 | 账号+密码派生密钥；**跨机可解**；网盘运营商拿不到内容 |
-| **不加密**（`--no-encrypt` / `encrypt:false`） | 只放本机或可信盘 | 头之后就是 gzip，任何工具都能打开；快、不用记密码 |
+| **Encrypted** (default) | Uploading to cloud storage, or anywhere untrusted | Key derived from account + password; **opens on another machine**; the storage provider cannot read it |
+| **Unencrypted** (`--no-encrypt` / `encrypt:false`) | Local disk or a trusted drive only | gzip right after the header, so any tool opens it; fast and nothing to remember |
 
-**三个钥匙槽**（都绑同一把随机数据密钥 DEK，任一把能开即可）
+**Three key slots** (all bound to the same random data key DEK; any one of them opens the package)
 
-| 槽 | 用在哪 | 备注 |
+| Slot | Used for | Notes |
 |---|---|---|
-| 账号 + 密码 | **跨机还原**（换电脑的主路径） | 密码规则：首字母大写 + 含特殊符号 + ≥8 位，**打包时就强制** |
-| 恢复码 | 忘了账号密码时 | 打包时自动生成、**只显示一次**；丢了 + 忘密码 = 永久打不开 |
-| 本机免密（DPAPI） | 本机还原 / 定时任务 | 只在这台电脑的这个 Windows 用户下有效，换机无效 |
+| Account + password | **Restoring on another machine** (the main path when you change computers) | Password policy: leading capital + special character + ≥8 chars, **enforced at pack time** |
+| Recovery code | When the account and password are forgotten | Generated at pack time, **shown once**; losing it plus forgetting the password means the package is gone |
+| Local passwordless (DPAPI) | Local restores and scheduled jobs | Valid only for this Windows user on this machine; useless after a move |
 
-**默认行为**：不给密码 → 自动生成合规随机密码 + 自动带恢复码槽 + 本机免密槽，**三者只显示一次、不落盘**（要落盘须显式 `--write-key`）。
+**Default behaviour**: with no password supplied it generates a compliant random one, adds a recovery-code slot and a
+local passwordless slot, and **shows all three exactly once without writing them anywhere** (persisting requires
+`--write-key`).
 
-**为什么这样设计**：包一旦外流，攻击者能在本地无限次试口令。实测 `scrypt(N=2^17)` 每次尝试约 **177 ms / 134 MB** —— 8 位混合口令在 GPU 集群前仍不够，**请用 ≥12 位随机或 4 个以上不相关单词**。
+**Why it is designed this way**: once a package leaves the machine, an attacker can try passwords offline forever.
+Measured `scrypt(N=2^17)`: about **177 ms / 134 MB per attempt**. An 8-character mixed password is still not enough
+against a GPU cluster — **use ≥12 random characters, or four or more unrelated words**.
 
-**命令行示例**
+**Command-line examples**
 
 ```powershell
-# 加密（推荐上传网盘）：账号 + 密码 + 恢复码 + 本机免密
+# Encrypted (recommended before uploading): account + password + recovery code + local passwordless
 node scripts/core-drop.mjs --out G:\DSH-Backup --account ishii-vault-01 --password 'MyVault#2026' --recovery --local
 
-# 不加密（只放本机）
+# Unencrypted (local only)
 node scripts/core-drop.mjs --out G:\DSH-Backup --no-encrypt
 
-# 换电脑还原 / 本机免密还原
-node RESTORE/vault-restore.mjs --package <包.vault> --account ishii-vault-01 --password 'MyVault#2026' --target D:\恢复到这里
-node RESTORE/vault-restore.mjs --package <包.vault> --local --target D:\恢复到这里
+# Restore on another machine / restore passwordless on this one
+node RESTORE/vault-restore.mjs --package <package.vault> --account ishii-vault-01 --password 'MyVault#2026' --target D:\restore-here
+node RESTORE/vault-restore.mjs --package <package.vault> --local --target D:\restore-here
 ```
 
-## 6.6 定时自动备份（daemon-loop）
+## 6.6 Scheduled backups (daemon loop)
 
 ```jsonc
-// 插件配置（默认关闭）
+// Plugin config (off by default)
 "autoBackup": { "enabled": true, "dailyAt": "03:00", "scope": "all", "outDir": "G:\\DSH-Backup", "prune": true, "keepLast": 7 }
 ```
 
-- 用**本机免密槽**打包 → 配置里**不需要存密码**
-- 当天错过（关机 / 重启）会**补跑一次**；同一天不重复（去重记录 `<state>/schedule.json`）
-- `prune:true` 时备份后按滚动策略清理，默认**移入 `_trash`**（可回滚），不硬删
+- Packs with the **local passwordless slot**, so **no password needs to be stored in config**
+- A missed day (shutdown / restart) triggers **one catch-up run**; the same day never runs twice (deduplicated in
+  `<state>/schedule.json`)
+- With `prune:true` the rotation policy runs after the backup and moves deletions to `_trash` by default (reversible),
+  never hard-deleting
 
-## 6.7 网页面板
+## 6.7 Web panel
 
-- **一键备份区**：加密开关 · 账号 · 密码 · 本机免密 · 输出目录 · 作用域；结果区**醒目显示一次**恢复码 / 自动生成的密码
-- **历史区**：校验 / 还原预览 / 还原（支持账号、恢复码、本机免密）；原位还原写前自动把原目录改名 `.bak-<时间戳>`
-- 安全：面板 API 只允许**本机回环**访问，拒绝跨站 `Origin`，目录参数限白名单
+- **One-click backup**: encryption toggle · account · password · local passwordless · output directory · scope; the
+  result area **prominently shows** the recovery code / generated password once
+- **History**: verify / restore preview / restore (account, recovery code or local passwordless); in-place restore
+  renames the existing directory to `.bak-<timestamp>` before writing
+- Security: the panel API only answers **loopback** requests, rejects cross-site `Origin`, and restricts directory
+  arguments to an allow-list
 
-## 6.8 远端目标（NAS / 网络路径 / WebDAV）
+## 6.8 Remote targets (NAS / network share / WebDAV)
 
-**本地永远是主副本**；推送是"额外一份"，推送失败**不影响备份成立**（结果记在 `manifest.pushTargets`）。
+**The local copy is always the primary one**; a push is an extra copy, and a failed push **does not invalidate the
+backup** (the outcome is recorded in `manifest.pushTargets`).
 
-| 目标类型 | 用户要填什么 | 说明 |
+| Target type | What the user fills in | Notes |
 |---|---|---|
-| **本地目录** | 一个路径（如 `G:\DSH-Backup`） | 就是"输出目录"本身 |
-| **网络路径（UNC / 映射盘）** | `\\NAS\share\DSH-Backup` 或 `Z:\DSH-Backup`（+可选用户名/密码） | 与本地目录**填写方式完全一样**；带凭据时用 `net use` 建会话 |
-| **WebDAV** | `地址` + `用户名` + `密码` + `远端目录`，如 `https://nas.local:5006/dav/` + `DSH-Backup` | 群晖/威联通/极空间/坚果云/Nextcloud 均自带；纯 node 实现（MKCOL + PUT） |
+| **Local directory** | A path such as `G:\DSH-Backup` | This is the "output directory" itself |
+| **Network share (UNC or mapped drive)** | `\\NAS\share\DSH-Backup` or `Z:\DSH-Backup` (plus optional user/password) | Filled in **exactly** like a local directory; credentials are used to establish a `net use` session |
+| **WebDAV** | `address` + `user` + `password` + `remote dir`, e.g. `https://nas.local:5006/dav/` + `DSH-Backup` | Synology / QNAP / Zspace / Nutstore / Nextcloud all provide it; implemented in plain Node (MKCOL + PUT) |
 
-**凭据安全**：用户名/密码用 **DPAPI**（本机 + 当前 Windows 用户）加密后存 `plugin-data/dsh-vault/targets.json`，**不落明文**；面板读取时**不回传密码**（只标"已存"）。
+**Credential safety**: user names and passwords are encrypted with **DPAPI** (this machine, this Windows user) before
+being stored in `plugin-data/dsh-vault/targets.json` — **never in plaintext**. The panel **never returns the password**
+when reading; it only marks the credential as stored.
 
-**面板**：「目标」区可增删目标、逐条「测试连接」（会在目标写一个探针文件）。
-**命令行**：
+**Panel**: the Targets tab adds and removes targets and offers a per-target "test connection" (which writes a probe
+file to the target).
+**Command line**:
 ```powershell
-# 先在面板/配置里存好目标，然后备份时按名字推送
-node scripts/core-drop.mjs --out G:\DSH-Backup --push NAS-WebDAV,家里NAS
+# Store the target in the panel or config first, then push by name during a backup
+node scripts/core-drop.mjs --out G:\DSH-Backup --push NAS-WebDAV,home-nas
 ```
-**工具**：`vault_backup` 加 `pushTargets: ["NAS-WebDAV"]` 即同样效果。
+**Tool**: `vault_backup` with `pushTargets: ["NAS-WebDAV"]` does the same thing.
 
-**还没做**：对象存储 S3 兼容、网盘 CLI（BaiduPCS-Go）—— 接口已按"插一个适配器"的方式留好。
+**Not built yet**: S3-compatible object storage and cloud-drive CLIs (BaiduPCS-Go). The interface is already shaped as
+"plug in one adapter".
 
-## 7. 恢复
+## 7. Restore
 
 ```powershell
-# 最短路径（任意 Windows + Node 18+，不需要装本插件）
-node .\RESTORE\vault-restore.mjs --package .\DSHVAULT_xxx.vault --password "<密码>" --list      # 看包
-node .\RESTORE\vault-restore.mjs --package .\DSHVAULT_xxx.vault --password "<密码>" --target D:\vault-out
-node .\RESTORE\vault-restore.mjs --package .\DSHVAULT_xxx.vault --password "<密码>" --in-place   # 按分区还原到原位
-node .\RESTORE\vault-restore.mjs --package .\DSHVAULT_xxx.vault --password "<密码>" --verify     # 只校验
+# Shortest path (any Windows with Node 18+, plugin does not need to be installed)
+node .\RESTORE\vault-restore.mjs --package .\DSHVAULT_xxx.vault --password "<password>" --list      # inspect
+node .\RESTORE\vault-restore.mjs --package .\DSHVAULT_xxx.vault --password "<password>" --target D:\vault-out
+node .\RESTORE\vault-restore.mjs --package .\DSHVAULT_xxx.vault --password "<password>" --in-place   # restore partitions to their original locations
+node .\RESTORE\vault-restore.mjs --package .\DSHVAULT_xxx.vault --password "<password>" --verify     # verify only
 ```
 
-分区 → 落地位置：`00`→手动安装 · `01`→`%USERPROFILE%\.dsh` · `02`→原工作区路径（支持 `--remap C:\X=D:\Y`）· `03`→`~/.hindsight` + `pg_restore` · `04`→项目目录（重建容器）· `05`→随 `01` 生效。
+Partition → destination: `00` → install manually · `01` → `%USERPROFILE%\.dsh` · `02` → original workspace paths
+(`--remap C:\X=D:\Y` supported) · `03` → `~/.hindsight` plus `pg_restore` · `04` → project directory (rebuild the
+containers) · `05` → takes effect together with `01`.
 
 ---
 
-## 8. 架构（lib/，全部零依赖）
+## 8. Architecture (`lib/`, all dependency-free)
 
-| 模块 | 职责 |
+| Module | Responsibility |
 |---|---|
-| `index.js` | 插件入口：注册 6 工具；可选接线 webserver 路由（缺服务自动降级） |
-| `vault/paths.js` | `$DSH_HOME` / 工作区发现 / 安装包与编排探测 |
-| `vault/io.js` | 稳定读 `stableStat` / walk / sha256 / 原子写 |
-| `vault/filter.js` | 四层排除 + `classifyEntry` |
-| `vault/importance.js` | 打分与 P0/P1/P2 分层 |
-| `vault/tar.js` | 自写 tar（ustar + GNU LongLink）；**按声明 size 精确读取**（防止条目错位）+ 热点文件写前复检 |
-| `vault/crypto.js` | scrypt + AES-256-GCM 8 MiB 分块 AEAD；明文头（magic + len + JSON） |
-| `vault/pack.js` | 流水线 tar→gzip→加密→分卷→原子落地；manifest；包内 `RESTORE/` 文档生成；staging 自清 |
-| `vault/policy.js` | GFS 保留 + 体积上限 + **增量链保护** + `_trash` |
-| `vault/portable-restore.mjs` | 随包分发的自包含还原器 |
-| `vault/toolkit.js` | 工具定义构造器 + `normalizeParameters`（schema 合规归一化） |
-| `server.js` | host HTTP API（8 端点 + job + `confirm` 门控，写操作默认 dry-run）**未在注入态验证** |
-| `client.js` | 面板五区（纯 DOM）**未在注态验证** |
+| `index.js` | Plugin entry: registers the six tools; optionally wires the webserver route (degrades cleanly when the service is absent) |
+| `vault/paths.js` | `$DSH_HOME` / workspace discovery / installer and orchestration detection |
+| `vault/io.js` | Stable reads `stableStat` / walk / sha256 / atomic writes |
+| `vault/filter.js` | Four exclusion layers plus `classifyEntry` |
+| `vault/importance.js` | Scoring with P0/P1/P2 tiering |
+| `vault/tar.js` | Hand-written tar (ustar + GNU LongLink); **reads exactly the declared size** (so entries cannot drift) plus a re-check of hot files before writing |
+| `vault/crypto.js` | scrypt + AES-256-GCM with 8 MiB chunked AEAD; plaintext header (magic + len + JSON) |
+| `vault/pack.js` | Pipeline tar → gzip → encrypt → split into volumes → atomic write; manifest; in-package `RESTORE/` document generation; staging cleanup |
+| `vault/policy.js` | GFS retention plus size cap plus **incremental-chain protection** plus `_trash` |
+| `vault/portable-restore.mjs` | The self-contained restorer shipped inside each package |
+| `vault/toolkit.js` | Tool-definition builder plus `normalizeParameters` (schema-compliant normalisation) |
+| `server.js` | Host HTTP API (8 endpoints, job tracking, a `confirm` gate; write operations dry-run by default) — **verified in a real injected session** |
+| `client.js` | Five-tab panel in plain DOM — **verified in a real injected session** |
 
 ---
 
-## 9. 已知限制（诚实清单）
+## 9. Known limitations (an honest list)
 
-1. `server.js` / `client.js` 只做过 mock 自测，**未在真实 DSH 注入态验证**（`ctx.webServer.register` 的签名来自读码结论）。
-2. **NAS 已实现**：网络路径（UNC / 映射盘）与 WebDAV，见 §6.8。未实现的是对象存储 S3 与网盘 CLI（BaiduPCS-Go）—— 接口已按「插一个适配器」预留。
-3. **定时自动备份已实现**：见 §6.6（daemon-loop + `schedule.json` 去重 + 当日失败不重试 + 可注入 `intervalMs`）。未实现的是多任务排队与并发上限。
-4. `EXCLUDED_CAP = 2000`：单分区最多记录 2000 条排除证据（有总数统计，明细截断）。
-5. Windows 为主战场；`restore.ps1` 需要 pwsh，其余脚本跨平台可用（路径分隔符已处理）。
+1. **Not built**: S3-compatible object storage and cloud-drive CLIs (BaiduPCS-Go). The interface is shaped as "plug in
+   one adapter".
+2. **Not built**: a queue and a concurrency cap for backup jobs; scheduled backups currently run serially.
+3. `EXCLUDED_CAP = 2000`: at most 2000 exclusion records per partition (totals are always reported; the detail list is
+   truncated).
+4. Windows is the main target; `restore.ps1` needs pwsh, while the rest of the scripts are cross-platform (path
+   separators are handled).
+5. Restoring the `03-hindsight` partition needs Docker on the target machine for `pg_restore`; the plain directory part
+   (`~/.hindsight`) does not.
 
 ---
 
-## 10. 相关文档
+## 10. Related documents
 
-- 项目索引与决策记录（ADR-001…012、否决路径、轮次台账）：`I:\DSH 工作区\DSH完美备份计划\AGENT.md`
-- 调研（环境实测 / 选型对比 / 架构）：`docs\研究-备份插件调研.md`
-- 现状报告：`docs\报告-R4-现状.md` ｜ 真实落地报告：`docs\报告-真实落地-core.md`
+- Compatibility with `0.2.1-rc.2` (contract-by-contract): [`docs/compat-0.2.1-rc.2.md`](./docs/compat-0.2.1-rc.2.md)
+- Release process and the npm 404 post-mortem: [`docs/RELEASING.md`](./docs/RELEASING.md)
