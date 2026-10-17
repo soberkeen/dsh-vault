@@ -2,7 +2,7 @@
 
 **DSH（DeepSeek Harness）加密全量备份与恢复插件**
 
-[![npm version](https://img.shields.io/npm/v/@lingfengmow/dsh-vault.svg)](https://www.npmjs.com/package/@lingfengmow/dsh-vault)
+[![install](https://img.shields.io/badge/install-github%3Asoberkeen%2Fdsh--vault-2ea043.svg)](https://github.com/soberkeen/dsh-vault)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org)
 
@@ -17,23 +17,19 @@
 
 ## 1. 安装
 
-### 从 npm 装（推荐）
+### 从 GitHub 装（推荐 —— 当前唯一分发渠道）
 
 ```powershell
 # DSH 官方 CLI —— 会同时维护 dependencies + lock + node_modules + profile bundles
-& "<DSH 安装目录>\resources\runtime\cli\bin\dsh.cmd" plugin add @lingfengmow/dsh-vault
+& "<DSH 安装目录>\resources\runtime\cli\bin\dsh.cmd" plugin add github:soberkeen/dsh-vault
 
 # 指定 profile（多 profile 时）
-& "<DSH 安装目录>\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add @lingfengmow/dsh-vault
+& "<DSH 安装目录>\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:soberkeen/dsh-vault
 ```
 
 装完**完全退出 DSH 再启动**（不是点崩溃框的重启），设置左栏出现「备份」即成功。
 
-### 从 GitHub 装
-
-```powershell
-& "<DSH>\resources\runtime\cli\bin\dsh.cmd" plugin add github:soberkeen/dsh-vault
-```
+> **npm 分发暂缓**：包名已定为 `@lingfengmow/dsh-vault`，但 npm 在 2026-07 起的 2FA 发布策略（granular token bypass 2FA 弃用）与 `npm publish` 的 web 授权交接存在缺陷 —— 浏览器授权返回 200 之后 PUT 仍返回 404，六轮对照实验确认与权限 / org / 包名 / token / 网络 / 客户端版本全都无关。完整证据链见 [docs/RELEASING.md](./docs/RELEASING.md#为什么-npm-发布一直-404已实测归因)。**GitHub 安装完全等价**：`lib/` 是纯 ESM，无构建步骤，装下来即可运行。
 
 ### 本地开发
 
