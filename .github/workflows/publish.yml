@@ -12,7 +12,7 @@ name: publish
 #   Trusted Publishing 走 GitHub OIDC，不需要任何长期 token，也不需要 2FA 验证码。
 #
 # 前置（只需在 npm 网页配一次）：
-#   https://www.npmjs.com/package/@soberkeen/dsh-vault/access
+#   https://www.npmjs.com/package/@lingfengmow/dsh-vault/access
 #   → Trusted Publisher → GitHub Actions
 #   → Organization/user: soberkeen
 #      Repository:       dsh-vault

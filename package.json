@@ -1,5 +1,5 @@
 {
-  "name": "@soberkeen/dsh-vault",
+  "name": "@lingfengmow/dsh-vault",
   "version": "0.2.0",
   "description": "DSH 全量备份与恢复插件：加密打包 DSH 配置/会话/插件/工作区/Hindsight 记忆 + 客户端安装包，本地落地（可选 NAS/网盘），带包内自包含还原器与滚动保留策略。零外部依赖。",
   "type": "module",

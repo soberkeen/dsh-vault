@@ -57,10 +57,10 @@ Remove-Item .npmrc -Force
 
 ```powershell
 # ① registry 上确实有
-npm view @soberkeen/dsh-vault version dist.tarball
+npm view @lingfengmow/dsh-vault version dist.tarball
 
 # ② 从 npm 装到干净 profile（这是对「发布成功」的真正检验）
-& "<DSH>\resources\runtime\cli\bin\dsh.cmd" plugin --profile compat add @soberkeen/dsh-vault
+& "<DSH>\resources\runtime\cli\bin\dsh.cmd" plugin --profile compat add @lingfengmow/dsh-vault
 
 # ③ 起来后看设置左栏有没有「备份」，点进去五个标签都能切
 ```
@@ -73,7 +73,7 @@ npm view @soberkeen/dsh-vault version dist.tarball
 | 包内模块 id 与包名不一致 | `__ModuleLoader__.load({id})` 与 package.json 的 name 不同 → DSH 找不到模块 | 改名时全局替换 `lib/*.js` 里的 id、API 前缀、cordis entry name（本仓库改了 7 处：`client.js` L9/L22、`index.js` L2/L29、`server.js` L39/L198、`pack.js` L147） |
 | 测试脚本硬编码包名 | 改名后契约测试 FAIL 2 | 改成从 `package.json` 读（本仓库已改） |
 | npm 收 403 2FA | `Two-factor authentication or granular access token with bypass 2fa enabled is required` | 用 Automation Token（Classic）或 Granular 带 bypass 2FA |
-| 无 scope 的 `dsh-vault` | 已被他人占用（1.10.75） | 用 `@soberkeen/dsh-vault` |
+| 无 scope 的 `dsh-vault` | 已被他人占用（1.10.75） | 用 `@lingfengmow/dsh-vault` |
 | 在开发源里原地改名 | 破坏现役运行副本的 `@dsh-external/dsh-vault` 引用 | 发布用独立目录 `release/dsh-vault` |
 
 ## 版本约定

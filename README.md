@@ -2,7 +2,7 @@
 
 **DSH（DeepSeek Harness）加密全量备份与恢复插件**
 
-[![npm version](https://img.shields.io/npm/v/@soberkeen/dsh-vault.svg)](https://www.npmjs.com/package/@soberkeen/dsh-vault)
+[![npm version](https://img.shields.io/npm/v/@lingfengmow/dsh-vault.svg)](https://www.npmjs.com/package/@lingfengmow/dsh-vault)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org)
 
@@ -21,10 +21,10 @@
 
 ```powershell
 # DSH 官方 CLI —— 会同时维护 dependencies + lock + node_modules + profile bundles
-& "<DSH 安装目录>\resources\runtime\cli\bin\dsh.cmd" plugin add @soberkeen/dsh-vault
+& "<DSH 安装目录>\resources\runtime\cli\bin\dsh.cmd" plugin add @lingfengmow/dsh-vault
 
 # 指定 profile（多 profile 时）
-& "<DSH 安装目录>\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add @soberkeen/dsh-vault
+& "<DSH 安装目录>\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add @lingfengmow/dsh-vault
 ```
 
 装完**完全退出 DSH 再启动**（不是点崩溃框的重启），设置左栏出现「备份」即成功。

@@ -16,4 +16,4 @@
 # id 用插件短名（与 profile 的 cordis.patch.yml 寻址一致），name 用完整包名。
 - insert:
     - id: dsh-vault
-      name: '@soberkeen/dsh-vault'
+      name: '@lingfengmow/dsh-vault'
