@@ -1,0 +1,69 @@
+name: publish
+
+# 发布方式：npm Trusted Publishing（OIDC）
+#
+# 为什么不用 NPM_TOKEN：
+#   2026-07 起 npm 收紧策略 —— granular access token 的 bypass 2FA 能力被弃用，
+#   带 2FA 的账号用任何 token 直发都会 403：
+#     "Two-factor authentication or granular access token with bypass 2fa enabled
+#      is required to publish packages."
+#   实测确认（2026-10-17）：Automation Classic Token 同样被拒。
+#
+#   Trusted Publishing 走 GitHub OIDC，不需要任何长期 token，也不需要 2FA 验证码。
+#
+# 前置（只需在 npm 网页配一次）：
+#   https://www.npmjs.com/package/@soberkeen/dsh-vault/access
+#   → Trusted Publisher → GitHub Actions
+#   → Organization/user: soberkeen
+#      Repository:       dsh-vault
+#      Workflow filename: publish.yml
+#      Environment:      (留空)
+#
+# 之后：git tag v0.2.1 && git push --tags  → 自动发布，无需人工介入。
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # OIDC 必需 —— 缺这行 Trusted Publishing 不生效
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: 版本一致性检查（tag 必须等于 package.json version）
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          PKG=$(node -p "require('./package.json').version")
+          echo "tag=$TAG package=$PKG"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::tag v$TAG 与 package.json version $PKG 不一致"
+            exit 1
+          fi
+        if: startsWith(github.ref, 'refs/tags/')
+
+      - name: 语法检查
+        run: npm run check
+
+      - name: client 注册契约测试（8 项断言）
+        run: node scripts/client-register-test.mjs
+
+      - name: 确认包里含 cordis.patch.yml（缺它装上不装配）
+        run: |
+          npm pack --dry-run 2>&1 | tee /tmp/pack.txt
+          grep -q 'cordis.patch.yml' /tmp/pack.txt || {
+            echo "::error::tarball 里没有 cordis.patch.yml，安装后插件不会装配"; exit 1; }
+
+      - name: 发布到 npm（OIDC trusted publishing）
+        run: npm publish --access public
