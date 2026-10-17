@@ -1,0 +1,8 @@
+# 注意：lib/ 是本插件的源码兼产物（零构建纯 ESM），必须入库，不要忽略
+node_modules/
+*.tgz
+*.tsbuildinfo
+*.bak-*
+*.log
+.DS_Store
+Thumbs.db

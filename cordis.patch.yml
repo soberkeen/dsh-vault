@@ -1,0 +1,19 @@
+# dsh-vault 的 bundle patch —— **必须含 insert 块**
+#
+# 这是"本包如何挂进 DSH 插件树"的声明文件。2026-10-17 实测教训：
+# 之前这里写成空列表 `[]`，注释还自称"本插件不需要修改宿主行，故内容为空" —— 完全错误。
+# bundle patch 的 insert 就是把自己加进树的唯一手段；空 patch = 本包不挂任何行
+# = loader 里没有本插件的 entry = host 与 client 半边**一起缺席**
+# （现象：设置里看不到分区；/plugins/??<pkg>/client.js 探测 404；apply() 从不执行）。
+#
+# 对照 5 个能正常工作的 bundle（均含 insert）：
+#   dsh-context          → - insert: [{ id: dsh-context, name: dsh-context }]
+#   dsh-better-sidebar   → - insert: [{ id: better-sidebar, name: 'dsh-better-sidebar', disabled: ... }]
+#   dsh-purge            → - insert: [{ id: dsh-purge, name: 'dsh-purge', config: {...} }]
+#   @dsh-external/dsh-super-injector → - insert: [{ id: dsh-super-injector, name: '@dsh-external/dsh-super-injector', config: {} }]
+#   @michengai/dsh-skills-manager    → - insert: [{ id: skills-manager, name: '@michengai/dsh-skills-manager' }]
+#
+# id 用插件短名（与 profile 的 cordis.patch.yml 寻址一致），name 用完整包名。
+- insert:
+    - id: dsh-vault
+      name: '@soberkeen/dsh-vault'

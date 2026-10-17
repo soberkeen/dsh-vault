@@ -1,0 +1,73 @@
+{
+  "name": "@soberkeen/dsh-vault",
+  "version": "0.2.0",
+  "description": "DSH 全量备份与恢复插件：加密打包 DSH 配置/会话/插件/工作区/Hindsight 记忆 + 客户端安装包，本地落地（可选 NAS/网盘），带包内自包含还原器与滚动保留策略。零外部依赖。",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "scripts",
+    "docs",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "author": "soberkeen",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/soberkeen/dsh-vault.git"
+  },
+  "homepage": "https://github.com/soberkeen/dsh-vault#readme",
+  "bugs": {
+    "url": "https://github.com/soberkeen/dsh-vault/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "backup",
+    "encrypted-backup",
+    "aes-256-gcm",
+    "restore",
+    "vault",
+    "gfs-retention",
+    "webdav",
+    "nas"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "@deepseek-ai/dsh-client-ui-slots": "*",
+    "@deepseek-ai/dsh-client-locale": "*"
+  },
+  "scripts": {
+    "check": "node --check lib/index.js && node --check lib/client.js && node --check lib/server.js && node --check lib/vault/tar.js && node --check lib/vault/crypto.js",
+    "test": "node scripts/selftest.mjs",
+    "build": "bash scripts/build.sh",
+    "prepublishOnly": "npm run check && node scripts/client-register-test.mjs"
+  }
+}
