@@ -35,11 +35,14 @@ git add -A
 git commit -m "chore: release v<ver>"
 git push
 
-# 6) 发布 npm —— ⚠ 当前被 npm 侧阻塞，见文末「为什么 npm 发布一直 404」
-#    账号已开 auth-and-writes，必须手动提供 6 位 TOTP（不能用恢复码）
+# 6) 发布 npm —— 必须在真实终端窗口里跑（后台 job 无 TTY，必败）
+#    账号 auth-and-writes，必须手动提供 6 位 TOTP（不能用恢复码：会触发 72h 只读冻结）
 npm publish --access public --otp=<6位数字>
 
-# 6b) npm 不通时，GitHub 就是正式分发渠道（安装方命令不变）
+#    交互式入口（会自己拉 npm login，并停在 Enter OTP:）
+#    C:\Users\sober\Desktop\一键发布npm.cmd
+
+# 6b) GitHub Release 同时作为第二分发渠道
 #     安装方：dsh plugin add github:soberkeen/dsh-vault
 
 # 7) GitHub Release
@@ -91,39 +94,88 @@ npm view @lingfengmow/dsh-vault version dist.tarball
 
 ---
 
-## 为什么 npm 发布一直 404（已实测归因）
+## npm 发布 404 全景（已解决 —— 2026-10-20 发布成功）
 
-**结论**：不是权限、不是 org、不是包名、不是 token、不是网络、不是客户端版本 ——
-是 **npm 11 的 web 授权流程把「登录会话凭据」当成 OTP 塞进 publish 请求**，registry 不认，于是返回 404 而不是再问一次 401。
+> **最终结果**：`@lingfengmow/dsh-vault@0.2.0` 已于 **2026-10-20T14:19:46.673Z**（北京 22:19）发布成功。
+> 45 文件 / 解包 `532,247 B` / `shasum aa815b930a302d3327a786b9ddfa3e7813958032`（与本地 `npm pack` 逐字节一致）。
+> registry 直查 → `name=@lingfengmow/dsh-vault`、`latest=0.2.0`、`maintainers=soberkeen`。
+> **发布完成时 CLI 仍打印了 404** —— 那是假警报，见下面第 3 层。
 
-### 错误码演化（六轮）
+### 三层真因（按发现顺序，每层都推翻了上一层的判断）
+
+**第 1 层 —— 我用恢复码当 OTP，触发了 npm 的 72 小时只读冻结（真主因）**
+
+2026-10-17 我把用户给的 2FA **恢复码**（32 字节 hex）当 `--otp` 传给 `npm publish`。恢复码格式被接受（错误码从 `403` 变成 `E404`，说明认证环节过了），但 npm 判定这是「安全敏感操作」，账号进入预防性只读：
+
+```text
+npm notice: Your account has been temporarily suspended due to a recent security-sensitive action.
+npm error code E403
+npm error 403 Forbidden - POST https://registry.npmjs.org/-/stage/package/@lingfengmow%2fdsh-vault
+```
+
+官方依据：
+- [npm adds preventive account protection for high-impact accounts](https://github.blog/changelog/2026-06-25-npm-adds-preventive-account-protection-for-high-impact-accounts/)：「the account returns to normal automatically after 72 hours, with no re-confirmation step」
+- [Recovering your 2FA-enabled account](https://docs.npmjs.com/recovering-your-2fa-enabled-account/)：「When you use a recovery code to log in, npm places a temporary 72-hour security hold on your account」
+
+冻结期：`2026-10-17T13:14:50Z` → `2026-10-20T13:14:50Z`（北京 10-20 21:14）。
+**冻结期内所有写操作都失败，但读操作（`whoami` / `org ls` / `stage list`）全部 200** —— 这就是为什么前面几轮排查一直误判「权限正常」。
+
+> 教训一：**恢复码不是 OTP**。它只能用于登录恢复，不能当 `--otp` 提交；用了就冻结 72 小时。
+
+**第 2 层 —— 2FA 状态被读错字段，导致误判「2FA 没开」**
+
+`npm profile get tfa` 只取顶层字段，npm 返回的是嵌套对象，所以一直显示为空 → 我误判「账号没开 2FA，所以没 OTP 可给」。真实值：
+
+```powershell
+npm profile get --json | ConvertFrom-Json | Select-Object -ExpandProperty tfa
+# { "pending": null, "mode": "auth-and-writes" }
+```
+
+> 教训二：查 npm 2FA 状态用 `npm profile get --json` 读 `.tfa.mode`，不要用 `npm profile get tfa`。
+
+**第 3 层 —— 后台进程无 TTY，`npm login` 结构性走不通；且发布成功时 CLI 会误报 404**
+
+解冻后旧 token 已作废（`E401 token invalid`），必须重新 `npm login`。从后台 job 启动 `npm login --auth-type=web` 的 debug log：
+
+```text
+83-110  GET https://registry.npmjs.org/-/v1/done?sessionId=***  → 202 × 28 次
+111     GET https://registry.npmjs.org/-/v1/done?sessionId=***  → 404
+112     verbose web login not supported, trying couch
+        Username:            ← 退化成 2015 年的旧式问答登录，后台无 stdin，exit 1
+```
+
+`202` = 在等你点浏览器授权；`404` = 那个 web 会话过期（约 5 分钟）或没走完；随后 npm 判定 web 登录不可用，回退到 couch `Username:` 交互，后台没有 stdin 立即退出。
+
+`npm` 源码 `C:\Program Files\nodejs\node_modules\npm\lib\utils\auth.js:8` 的 `otplease`：
+`if (!process.stdin.isTTY || !process.stdout.isTTY) throw err` —— 只有 TTY 才进 web 流程。
+
+> 教训三：**`npm login` 和 `npm publish --otp` 必须在真实终端窗口里跑**，不能用后台 job / Agent 工具调用。交付物是 `publish-manual.ps1` + `一键发布.cmd`（双击出真窗口）。
+
+### 那个 404 到底是什么（关键结论）
+
+**它在发布成功之后才出现。** 2026-10-20 22:19 那次运行：`npm publish` 打印 404，但 registry 上包已经在了，且 tarball 的 sha1 与本地 pack 完全一致。
+
+所以「404 = 发布失败」是错的。实际是：**PUT 上传成功 → registry 写入成功 → CLI 后续某个步骤（access 设置 / 通知 / 版本确认）拿到 404 → CLI 把整次运行标成失败**。判断发布是否成功的唯一可靠依据是**直查 registry**：
+
+```powershell
+Invoke-RestMethod 'https://registry.npmjs.org/@lingfengmow%2Fdsh-vault' | Select-Object name,
+  @{n='latest';e={$_.'dist-tags'.latest}},
+  @{n='shasum';e={$_.versions.($_.'dist-tags'.latest).dist.shasum}}
+```
+
+> 教训四：**不要用 CLI 退出码判断 npm 发布成败**，直查 registry。
+
+### 六轮错误码（历史记录）
 
 | 轮 | 提供的凭据 | 结果 |
 |---|---|---|
 | 1 | 无 | `403` `Two-factor authentication or granular access token with bypass 2fa enabled is required` |
 | 2 | Granular token（未勾 bypass 2FA） | `403` 同上 —— 2026-07 起 GAT bypass 2FA 已弃用 |
-| 3 | 32 字节恢复码当 `--otp` | `E404`（且恢复码被消耗） |
+| 3 | 32 字节恢复码当 `--otp` | `E404`（触发 72h 冻结，见第 1 层） |
 | 4 | 非 TTY（后台 job） | `EOTP This operation requires a one-time password` + web auth URL |
-| 5 | TTY 走完浏览器授权（点了 Authorize） | `404 Not Found - PUT .../@lingfengmow%2fdsh-vault` |
-| 6 | `npx npm@10 publish` 走同样流程 | `404` `'@lingfengmow/dsh-vault@0.2.0' is not in this registry.` |
-
-### 决定性 debug log
-
-`C:\Users\sober\AppData\Local\npm-cache\_logs\2026-10-17T13_14_50_399Z-debug-0.log`：
-
-```text
-32 http fetch PUT 401 ...                        ← 首请求要 OTP
-33 verbose web auth opening url pair             ← 开浏览器授权
-34-41 http fetch GET 202 /-/v1/done?authId=***   ← 轮询等你点（8 次）
-42 http fetch GET 200 /-/v1/done?authId=***      ← 点了 Authorize，授权成功
-43 verbose web auth done-check finished
-44 http fetch PUT 404 ...                        ← 拿会话凭据当 otp 重试 → 404
-```
-
-第 42 行 200 说明**授权真的成功了**；第 44 行 404 说明 registry **不认那个"otp"**。
-
-npm 源码：`C:\Program Files\nodejs\node_modules\npm\lib\utils\auth.js:8` 的 `otplease` ——
-`if (!process.stdin.isTTY || !process.stdout.isTTY) throw err`，只有 TTY 才进 web 流程，而 web 流程的返回值被当成 otp 用。
+| 5 | TTY 走完浏览器授权 | `404 Not Found - PUT .../@lingfengmow%2fdsh-vault` |
+| 6 | `npx npm@10 publish` | `404` `'@lingfengmow/dsh-vault@0.2.0' is not in this registry.` |
+| 7 | **解冻后 TTY + authenticator 6 位 TOTP** | **发布成功**（CLI 仍打印 404，但 registry 已写入） |
 
 ### 逐项排除（每项都有实测）
 
@@ -135,16 +187,26 @@ npm 源码：`C:\Program Files\nodejs\node_modules\npm\lib\utils\auth.js:8` 的 
 | 包名被占 | 带 token 直 PUT 5 个不同名字 | **全部 401**（统一「要 OTP」，与名字无关） |
 | token 无效 | 重新 `npm login` 后的新 token 重测 | 同样 401 ✓ |
 | 网络拦截 | DNS → Cloudflare `104.16.9.34`；`proxy` = null；`GET /express` → 200 | 无代理、无改写 ✓ |
-| PUT 被中间层改写 | PowerShell 直 PUT `probe-put-test`（不经过 npm） | **401** —— 服务端判的，不是中间层 ✓ |
+| PUT 被中间层改写 | PowerShell 直 PUT（不经过 npm） | **401** —— 服务端判的，不是中间层 ✓ |
 | 客户端 bug | `npx npm@10 publish` | 同样 404（与版本无关） |
-| `files` / tarball | `npm pack --dry-run` → 44 文件、含 `cordis.patch.yml` | 包体正常 ✓ |
+| `files` / tarball | `npm pack --dry-run` | 45 文件、含 `cordis.patch.yml` ✓ |
 
-### 唯一可能有效的做法
+### user scope 发不了包 —— 必须建 org
+
+`@soberkeen/dsh-vault` 发不上去（404）：**npm 的 user scope 不会自动创建**。要先在 https://www.npmjs.com/org/create 建一个同名 org（Free/Public plan），才能发 `@<scope>/*`。
+
+### 发布后验证（每次发版必做）
 
 ```powershell
-npm publish --access public --otp=<authenticator 里当前的 6 位数字>
+# ① registry 上确实有，且 shasum 与本地一致
+Invoke-RestMethod 'https://registry.npmjs.org/@lingfengmow%2Fdsh-vault' | Select-Object name,
+  @{n='latest';e={$_.'dist-tags'.latest}}
+
+# ② 下载 tarball 核对关键文件（缺 cordis.patch.yml = 装上不装配）
+$t = Join-Path $env:TEMP 'v.tgz'
+Invoke-WebRequest 'https://registry.npmjs.org/@lingfengmow/dsh-vault/-/dsh-vault-0.2.0.tgz' -OutFile $t
+tar -tzf $t | Select-String 'package/cordis.patch.yml|package/lib/client.js|package/lib/index.js'
+
+# ③ 干净 profile 真装一次（这才是对「发布成功」的终检）
+& "<DSH 安装目录>\resources\runtime\cli\bin\dsh.cmd" plugin --profile <干净profile> add "@lingfengmow/dsh-vault"
 ```
-
-走 classic OTP 校验，绕开 web-auth 那条坏路。前提：npm 账号绑过 authenticator app。
-
-**2026-10-17 决定放弃 npm 首发** —— GitHub 安装完全等价，`lib/` 是纯 ESM 源码兼产物，装下来即可运行。

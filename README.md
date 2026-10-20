@@ -4,6 +4,7 @@
 
 **Encrypted full backup and restore for DSH (DeepSeek Harness)**
 
+[![npm](https://img.shields.io/npm/v/@lingfengmow/dsh-vault.svg)](https://www.npmjs.com/package/@lingfengmow/dsh-vault)
 [![install](https://img.shields.io/badge/install-github%3Asoberkeen%2Fdsh--vault-2ea043.svg)](https://github.com/soberkeen/dsh-vault)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org)
@@ -26,25 +27,27 @@
 
 ## 1. Install
 
-### From GitHub (recommended — the only distribution channel right now)
+### From npm (recommended)
 
 ```powershell
 # Official DSH CLI — maintains dependencies + lockfile + node_modules + profile bundles
-& "<DSH install dir>\resources\runtime\cli\bin\dsh.cmd" plugin add github:soberkeen/dsh-vault
+& "<DSH install dir>\resources\runtime\cli\bin\dsh.cmd" plugin add "@lingfengmow/dsh-vault"
 
 # Pin a profile when you run more than one
+& "<DSH install dir>\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add "@lingfengmow/dsh-vault"
+```
+
+Published as `@lingfengmow/dsh-vault@0.2.0` — 45 files, 532 KB unpacked, `sha1 aa815b930a302d3327a786b9ddfa3e7813958032`.
+
+### From GitHub (equivalent — `lib/` is plain ESM with no build step)
+
+```powershell
+& "<DSH install dir>\resources\runtime\cli\bin\dsh.cmd" plugin add github:soberkeen/dsh-vault
 & "<DSH install dir>\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add github:soberkeen/dsh-vault
 ```
 
 Then **fully quit DSH and start it again** (not the "restart" button on the crash dialog). A **Backup** entry appears
 in the settings sidebar when it worked.
-
-> **npm distribution is on hold.** The package name is reserved as `@lingfengmow/dsh-vault`, but npm's 2FA publishing
-> policy (granular-token bypass of 2FA deprecated in 2026-07) and `npm publish`'s web-auth handoff disagree: the browser
-> handoff returns 200 and the following PUT still returns 404. Six rounds of controlled experiments ruled out
-> permissions, org, package name, token, network and client version. Full evidence chain in
-> [docs/RELEASING.md](./docs/RELEASING.md). **Installing from GitHub is equivalent** — `lib/` is plain ESM with no build
-> step.
 
 ### Local development
 
